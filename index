@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>App Atenció Domiciliària</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body>
+  <h1>App Atenció Domiciliària</h1>
+
+  <!-- Login -->
+  <button id="loginBtn">Iniciar sessió amb Google</button>
+  <button id="logoutBtn" style="display:none;">Tancar sessió</button>
+
+  <!-- Carregar Excel -->
+  <div id="uploadSection" style="display:none;">
+    <h2>Pujar llistat de pacients</h2>
+    <input type="file" id="fileInput" />
+  </div>
+
+  <!-- Cercador i pacients -->
+  <div id="patientSection" style="display:none;">
+    <input type="text" id="searchInput" placeholder="Cerca pacient..." />
+    <ul id="patientList"></ul>
+  </div>
+
+  <script type="module">
+    // ✅ Configuració Firebase (posa la teva pròpia!)
+    const firebaseConfig = {
+      apiKey: "XXXXX",
+      authDomain: "XXXXX.firebaseapp.com",
+      projectId: "XXXXX",
+      storageBucket: "XXXXX.appspot.com",
+      messagingSenderId: "XXXXX",
+      appId: "XXXXX"
+    };
+
+    const app = firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const fileInput = document.getElementById("fileInput");
+    const uploadSection = document.getElementById("uploadSection");
+    const patientSection = document.getElementById("patientSection");
+    const searchInput = document.getElementById("searchInput");
+    const patientList = document.getElementById("patientList");
+
+    let currentUser = null;
+    let reglesGlobals = [];
+
+    // 🔒 Clau secreta (posa-la TU i no la comparteixis)
+    const SECRET_KEY = "clau-super-secreta-que-nomes-tu-saps";
+
+    function encrypt(text) {
+      return CryptoJS.AES.encrypt(text, SECRET_KEY).toString();
+    }
+
+    function decrypt(cipher) {
+      try {
+        const bytes = CryptoJS.AES.decrypt(cipher, SECRET_KEY);
+        return bytes.toString(CryptoJS.enc.Utf8);
+      } catch {
+        return "ERROR_DESCIFRAT";
+      }
+    }
+
+    // 🔹 LOGIN
+    loginBtn.addEventListener("click", async () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        await auth.signInWithPopup(provider);
+      } catch (err) {
+        alert("Error login: " + err.message);
+      }
+    });
+
+    logoutBtn.addEventListener("click", () => auth.signOut());
+
+    auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        currentUser = user;
+        loginBtn.style.display = "none";
+        logoutBtn.style.display = "block";
+        uploadSection.style.display = "block";
+        patientSection.style.display = "block";
+
+        // Carregar regles globals
+        const snapshot = await db.collection("reglesGlobals").get();
+        reglesGlobals = snapshot.docs.map(doc => doc.data());
+        console.log("Regles carregades:", reglesGlobals);
+
+        loadPatients();
+      } else {
+        currentUser = null;
+        loginBtn.style.display = "block";
+        logoutBtn.style.display = "none";
+        uploadSection.style.display = "none";
+        patientSection.style.display = "none";
+      }
+    });
+
+    // 🔹 PUJAR EXCEL
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      for (let i = 1; i < rows.length; i++) {
+        const [nom, edat, malalties] = rows[i];
+        await db.collection("pacients").add({
+          uid: currentUser.uid,
+          nom: encrypt(nom),   // ✅ encriptat
+          edat: Number(edat),
+          malalties: malalties ? malalties.split(",") : [],
+          checklists: {}
+        });
+      }
+      alert("Pacients pujats!");
+      loadPatients();
+    });
+
+    // 🔹 MOSTRAR PACIENTS
+    async function loadPatients() {
+      if (!currentUser) return;
+      const snapshot = await db.collection("pacients")
+        .where("uid", "==", currentUser.uid).get();
+
+      patientList.innerHTML = "";
+      snapshot.forEach(doc => {
+        const p = doc.data();
+        const nomDesxifrat = decrypt(p.nom);
+        const li = document.createElement("li");
+        li.textContent = `${nomDesxifrat} (${p.edat} anys)`;
+        li.addEventListener("click", () => openPatient(doc.id, {
+          ...p, nom: nomDesxifrat
+        }));
+        patientList.appendChild(li);
+      });
+    }
+
+    // 🔹 OBERTURA PACIENT I CHECKLIST
+    function openPatient(id, pacient) {
+      const div = document.createElement("div");
+      div.innerHTML = `<h3>${pacient.nom} (${pacient.edat})</h3>`;
+      document.body.appendChild(div);
+
+      // Escales aplicables segons reglesGlobals
+      let escalesAplicables = [];
+      reglesGlobals.forEach(r => {
+        if (r.condicio === "tots") escalesAplicables.push(r.escala);
+        if (r.condicio === "DM2" && pacient.malalties.includes("DM2")) escalesAplicables.push(r.escala);
+        if (r.condicio === "menor75" && pacient.edat < 75) escalesAplicables.push(r.escala);
+      });
+
+      escalesAplicables.forEach(e => {
+        const label = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = pacient.checklists?.[e] || false;
+        checkbox.addEventListener("change", async () => {
+          await db.collection("pacients").doc(id).update({
+            [`checklists.${e}`]: checkbox.checked
+          });
+        });
+        label.appendChild(checkbox);
+        label.append(" " + e);
+        div.appendChild(label);
+        div.appendChild(document.createElement("br"));
+      });
+    }
+
+    // 🔹 CERCA
+    searchInput.addEventListener("input", async () => {
+      const txt = searchInput.value.toLowerCase();
+      const snapshot = await db.collection("pacients")
+        .where("uid", "==", currentUser.uid).get();
+
+      patientList.innerHTML = "";
+      snapshot.forEach(doc => {
+        const p = doc.data();
+        const nomDesxifrat = decrypt(p.nom);
+        if (nomDesxifrat.toLowerCase().includes(txt)) {
+          const li = document.createElement("li");
+          li.textContent = `${nomDesxifrat} (${p.edat})`;
+          li.addEventListener("click", () => openPatient(doc.id, {
+            ...p, nom: nomDesxifrat
+          }));
+          patientList.appendChild(li);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
