@@ -1,201 +1,99 @@
 <!DOCTYPE html>
-<html lang="ca">
+<html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>App Atenció Domiciliària</title>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amigo Invisible Doble</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f9; }
+    h1 { text-align: center; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 10px; max-width: 400px; margin: 20px auto; }
+    input { padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; }
+    button { display: block; margin: 20px auto; padding: 12px 24px; font-size: 16px; background: #4CAF50; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button:hover { background: #45a049; }
+    .hidden { display: none; }
+    .names-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; max-width: 400px; margin: 20px auto; }
+    .name-box { padding: 20px; text-align: center; font-size: 18px; font-weight: bold; color: white; border-radius: 10px; cursor: pointer; }
+    .msg { max-width: 400px; margin: 20px auto; padding: 15px; background: #fff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); font-size: 16px; }
+  </style>
 </head>
 <body>
-  <h1>App Atenció Domiciliària</h1>
+  <h1>Amigo Invisible Doble</h1>
 
-  <!-- Login -->
-  <button id="loginBtn">Iniciar sessió amb Google</button>
-  <button id="logoutBtn" style="display:none;">Tancar sessió</button>
-
-  <!-- Carregar Excel -->
-  <div id="uploadSection" style="display:none;">
-    <h2>Pujar llistat de pacients</h2>
-    <input type="file" id="fileInput" />
+  <!-- Pantalla 1 -->
+  <div id="screen1">
+    <div class="grid" id="nameInputs"></div>
+    <button id="okBtn">OK</button>
   </div>
 
-  <!-- Cercador i pacients -->
-  <div id="patientSection" style="display:none;">
-    <input type="text" id="searchInput" placeholder="Cerca pacient..." />
-    <ul id="patientList"></ul>
+  <!-- Pantalla 2 -->
+  <div id="screen2" class="hidden">
+    <div class="names-grid" id="namesGrid"></div>
+    <div id="messageBox" class="msg hidden"></div>
   </div>
 
-  <script type="module">
-    // ✅ Configuració Firebase (posa la teva pròpia!)
-    const firebaseConfig = {
-      apiKey: "XXXXX",
-      authDomain: "XXXXX.firebaseapp.com",
-      projectId: "XXXXX",
-      storageBucket: "XXXXX.appspot.com",
-      messagingSenderId: "XXXXX",
-      appId: "XXXXX"
-    };
+  <script>
+    const colors = ["#e57373","#64b5f6","#81c784","#ffb74d","#ba68c8","#4db6ac"];
 
-    const app = firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
+    const screen1 = document.getElementById("screen1");
+    const screen2 = document.getElementById("screen2");
+    const nameInputs = document.getElementById("nameInputs");
+    const namesGrid = document.getElementById("namesGrid");
+    const messageBox = document.getElementById("messageBox");
 
-    const loginBtn = document.getElementById("loginBtn");
-    const logoutBtn = document.getElementById("logoutBtn");
-    const fileInput = document.getElementById("fileInput");
-    const uploadSection = document.getElementById("uploadSection");
-    const patientSection = document.getElementById("patientSection");
-    const searchInput = document.getElementById("searchInput");
-    const patientList = document.getElementById("patientList");
-
-    let currentUser = null;
-    let reglesGlobals = [];
-
-    // 🔒 Clau secreta (posa-la TU i no la comparteixis)
-    const SECRET_KEY = "clau-super-secreta-que-nomes-tu-saps";
-
-    function encrypt(text) {
-      return CryptoJS.AES.encrypt(text, SECRET_KEY).toString();
+    // Crear 6 inputs
+    for (let i = 0; i < 6; i++) {
+      let input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Nombre " + (i+1);
+      nameInputs.appendChild(input);
     }
 
-    function decrypt(cipher) {
-      try {
-        const bytes = CryptoJS.AES.decrypt(cipher, SECRET_KEY);
-        return bytes.toString(CryptoJS.enc.Utf8);
-      } catch {
-        return "ERROR_DESCIFRAT";
+    document.getElementById("okBtn").addEventListener("click", () => {
+      const inputs = document.querySelectorAll("#nameInputs input");
+      const participants = [];
+      inputs.forEach(inp => {
+        if (inp.value.trim()) participants.push(inp.value.trim());
+      });
+
+      if (participants.length !== 6) {
+        alert("Introduce exactamente 6 nombres");
+        return;
       }
-    }
 
-    // 🔹 LOGIN
-    loginBtn.addEventListener("click", async () => {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      try {
-        await auth.signInWithPopup(provider);
-      } catch (err) {
-        alert("Error login: " + err.message);
+      // Asignaciones circulares
+      const assignments = {};
+      for (let i = 0; i < 6; i++) {
+        let giver = participants[i];
+        let r1 = participants[(i+1)%6];
+        let r2 = participants[(i+2)%6];
+        assignments[giver] = [r1,r2];
       }
-    });
 
-    logoutBtn.addEventListener("click", () => auth.signOut());
+      // Mostrar pantalla 2
+      screen1.classList.add("hidden");
+      screen2.classList.remove("hidden");
 
-    auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        currentUser = user;
-        loginBtn.style.display = "none";
-        logoutBtn.style.display = "block";
-        uploadSection.style.display = "block";
-        patientSection.style.display = "block";
+      // Crear cajas de colores
+      participants.forEach((name, idx) => {
+        let box = document.createElement("div");
+        box.className = "name-box";
+        box.style.background = colors[idx];
+        box.textContent = name;
+        box.addEventListener("click", () => {
+          let r1 = assignments[name][0];
+          let r2 = assignments[name][1];
+          let col1 = participants.find(p => assignments[p].includes(r1) && p !== name);
+          let col2 = participants.find(p => assignments[p].includes(r2) && p !== name);
 
-        // Carregar regles globals
-        const snapshot = await db.collection("reglesGlobals").get();
-        reglesGlobals = snapshot.docs.map(doc => doc.data());
-        console.log("Regles carregades:", reglesGlobals);
-
-        loadPatients();
-      } else {
-        currentUser = null;
-        loginBtn.style.display = "block";
-        logoutBtn.style.display = "none";
-        uploadSection.style.display = "none";
-        patientSection.style.display = "none";
-      }
-    });
-
-    // 🔹 PUJAR EXCEL
-    fileInput.addEventListener("change", async (e) => {
-      const file = e.target.files[0];
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-      for (let i = 1; i < rows.length; i++) {
-        const [nom, edat, malalties] = rows[i];
-        await db.collection("pacients").add({
-          uid: currentUser.uid,
-          nom: encrypt(nom),   // ✅ encriptat
-          edat: Number(edat),
-          malalties: malalties ? malalties.split(",") : [],
-          checklists: {}
+          messageBox.innerHTML = `
+            <b>${name}</b>:<br><br>
+            Le tienes que hacer un regalo a <b>${r1}</b> con <b>${col1}</b>.<br>
+            Y le tienes que hacer un regalo a <b>${r2}</b> con <b>${col2}</b>.
+          `;
+          messageBox.classList.remove("hidden");
         });
-      }
-      alert("Pacients pujats!");
-      loadPatients();
-    });
-
-    // 🔹 MOSTRAR PACIENTS
-    async function loadPatients() {
-      if (!currentUser) return;
-      const snapshot = await db.collection("pacients")
-        .where("uid", "==", currentUser.uid).get();
-
-      patientList.innerHTML = "";
-      snapshot.forEach(doc => {
-        const p = doc.data();
-        const nomDesxifrat = decrypt(p.nom);
-        const li = document.createElement("li");
-        li.textContent = `${nomDesxifrat} (${p.edat} anys)`;
-        li.addEventListener("click", () => openPatient(doc.id, {
-          ...p, nom: nomDesxifrat
-        }));
-        patientList.appendChild(li);
-      });
-    }
-
-    // 🔹 OBERTURA PACIENT I CHECKLIST
-    function openPatient(id, pacient) {
-      const div = document.createElement("div");
-      div.innerHTML = `<h3>${pacient.nom} (${pacient.edat})</h3>`;
-      document.body.appendChild(div);
-
-      // Escales aplicables segons reglesGlobals
-      let escalesAplicables = [];
-      reglesGlobals.forEach(r => {
-        if (r.condicio === "tots") escalesAplicables.push(r.escala);
-        if (r.condicio === "DM2" && pacient.malalties.includes("DM2")) escalesAplicables.push(r.escala);
-        if (r.condicio === "menor75" && pacient.edat < 75) escalesAplicables.push(r.escala);
-      });
-
-      escalesAplicables.forEach(e => {
-        const label = document.createElement("label");
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = pacient.checklists?.[e] || false;
-        checkbox.addEventListener("change", async () => {
-          await db.collection("pacients").doc(id).update({
-            [`checklists.${e}`]: checkbox.checked
-          });
-        });
-        label.appendChild(checkbox);
-        label.append(" " + e);
-        div.appendChild(label);
-        div.appendChild(document.createElement("br"));
-      });
-    }
-
-    // 🔹 CERCA
-    searchInput.addEventListener("input", async () => {
-      const txt = searchInput.value.toLowerCase();
-      const snapshot = await db.collection("pacients")
-        .where("uid", "==", currentUser.uid).get();
-
-      patientList.innerHTML = "";
-      snapshot.forEach(doc => {
-        const p = doc.data();
-        const nomDesxifrat = decrypt(p.nom);
-        if (nomDesxifrat.toLowerCase().includes(txt)) {
-          const li = document.createElement("li");
-          li.textContent = `${nomDesxifrat} (${p.edat})`;
-          li.addEventListener("click", () => openPatient(doc.id, {
-            ...p, nom: nomDesxifrat
-          }));
-          patientList.appendChild(li);
-        }
+        namesGrid.appendChild(box);
       });
     });
   </script>
